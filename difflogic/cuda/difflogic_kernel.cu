@@ -10,7 +10,7 @@
 
 #define BACKWARD_W_BATCH_THREADS 32
 
-#define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
+#define CHECK_CUDA(x) TORCH_CHECK(x.is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x)                                                                                                 \
     CHECK_CUDA(x);                                                                                                     \
@@ -280,7 +280,7 @@ torch::Tensor logic_layer_cuda_forward(
         min(static_cast<int64_t>(65535), ceil_div(out_size, static_cast<int64_t>(threads_per_block.y)))
     );
 
-    AT_DISPATCH_FLOATING_TYPES_AND_HALF(x.type(), "logic_layer_cuda_forward", ([&] {
+    AT_DISPATCH_FLOATING_TYPES_AND_HALF(x.scalar_type(), "logic_layer_cuda_forward", ([&] {
                            logic_layer_cuda_forward_kernel<scalar_t><<<blocks_per_grid, threads_per_block>>>(
                                x.packed_accessor64<scalar_t, 2, torch::RestrictPtrTraits>(),
                                a.packed_accessor64<int64_t, 1, torch::RestrictPtrTraits>(),
@@ -322,7 +322,7 @@ torch::Tensor logic_layer_cuda_backward_w(
         min(static_cast<int64_t>(65535), ceil_div(out_size, static_cast<int64_t>(threads_per_block.y)))
     );
 
-    AT_DISPATCH_FLOATING_TYPES_AND_HALF(x.type(), "logic_layer_cuda_backward_w", ([&] {
+    AT_DISPATCH_FLOATING_TYPES_AND_HALF(x.scalar_type(), "logic_layer_cuda_backward_w", ([&] {
                            logic_layer_cuda_backward_w_kernel<scalar_t><<<blocks_per_grid, threads_per_block>>>(
                                x.packed_accessor64<scalar_t, 2, torch::RestrictPtrTraits>(),
                                a.packed_accessor64<int64_t, 1, torch::RestrictPtrTraits>(),
@@ -390,7 +390,7 @@ torch::Tensor logic_layer_cuda_backward_x(
         min(static_cast<int64_t>(65535), ceil_div(x.size(0), static_cast<int64_t>(threads_per_block.y)))
     );
 
-    AT_DISPATCH_FLOATING_TYPES_AND_HALF(x.type(), "logic_layer_cuda_backward_x", ([&] {
+    AT_DISPATCH_FLOATING_TYPES_AND_HALF(x.scalar_type(), "logic_layer_cuda_backward_x", ([&] {
                            logic_layer_cuda_backward_x_kernel<scalar_t><<<blocks_per_grid, threads_per_block>>>(
                                x.packed_accessor64<scalar_t, 2, torch::RestrictPtrTraits>(),
                                a.packed_accessor64<int64_t, 1, torch::RestrictPtrTraits>(),
@@ -524,7 +524,7 @@ torch::Tensor logic_layer_cuda_eval(
         min(static_cast<int64_t>(65535), ceil_div(x.size(0), static_cast<int64_t>(threads_per_block.y)))
     );
 
-    AT_DISPATCH_INTEGRAL_TYPES(x.type(), "logic_layer_cuda_eval_kernel", ([&] {
+    AT_DISPATCH_INTEGRAL_TYPES(x.scalar_type(), "logic_layer_cuda_eval_kernel", ([&] {
                                    logic_layer_cuda_eval_kernel<scalar_t><<<blocks_per_grid, threads_per_block>>>(
                                        x.packed_accessor64<scalar_t, 2, torch::RestrictPtrTraits>(),
                                        a.packed_accessor64<int64_t, 1, torch::RestrictPtrTraits>(),
@@ -614,7 +614,7 @@ std::tuple<torch::Tensor, int> tensor_packbits_cuda(
     }();
     auto b = torch::zeros({out_size, batch_out_size}, torch::dtype(dispatch_type).device(t.device()));
 
-    AT_DISPATCH_INTEGRAL_TYPES(b.type(), "tensor_packbits_cuda_kernel", ([&] {
+    AT_DISPATCH_INTEGRAL_TYPES(b.scalar_type(), "tensor_packbits_cuda_kernel", ([&] {
                                    tensor_packbits_cuda_kernel<scalar_t><<<blocks_per_grid, threads_per_block>>>(t.packed_accessor32<bool, 2, torch::RestrictPtrTraits>(),
                                                                                                                             b.packed_accessor32<scalar_t, 2, torch::RestrictPtrTraits>());
                                }));
@@ -687,7 +687,7 @@ torch::Tensor groupbitsum(
 
     auto t = torch::zeros({out_size, batch_out_size}, torch::dtype(torch::kInt32).device(b.device()));
 
-    AT_DISPATCH_INTEGRAL_TYPES(b.type(), "groupbitsum_kernel", ([&] {
+    AT_DISPATCH_INTEGRAL_TYPES(b.scalar_type(), "groupbitsum_kernel", ([&] {
                                    groupbitsum_kernel<scalar_t><<<blocks_per_grid, threads_per_block>>>(
                                         b.packed_accessor32<scalar_t, 2, torch::RestrictPtrTraits>(),
                                         t.packed_accessor32<int, 2, torch::RestrictPtrTraits>()
