@@ -61,12 +61,17 @@ def bin_op(a, b, i):
     elif i == 15:
         return torch.ones_like(a)
 
-
+# a, b 의 shape은 (B, out_dim) 이고, a, b는 각각 output 뉴런에 들어갈 input 뉴런의 값들이 순서대로 저장되어 있다.
+# i_s 의 shape은 (out_dim, 16) 이라고 생각하면 된다.
 def bin_op_s(a, b, i_s):
-    r = torch.zeros_like(a)
+    r = torch.zeros_like(a) # 누적합을 한다.
     for i in range(16):
-        u = bin_op(a, b, i)
+        u = bin_op(a, b, i) # i 번 게이트의 실수완화 연산을 a, b 전체에 대해 한 번에 계산한다.
+        # i_s[..., i] 는 i번 게이트의 가중치를 꺼낸다. 추론 시에는 원-핫 벡터 이므로 i = 0 ~ 15값 중 단 하나만 1이다.
+        # 가중치와 실수완화 연산을 곱해서 누적합을 한다. 이 때 추론시에는 단 하나의 실수완화 값이 더해지는 것을 알 수 있다. (원-핫 벡터이므로)
         r = r + i_s[..., i] * u
+        # 리턴 값으로 output 뉴런에 들어갈 값들이 들어간다.
+        # 추론에서는 원-핫 벡터여도 16개의 bin_op()를 모두 계산하므로 비효율적이다.
     return r
 
 

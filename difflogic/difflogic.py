@@ -7,7 +7,7 @@ from .packbitstensor import PackBitsTensor
 
 ########################################################################################################################
 
-
+# 각 뉴런이 입력 2개만 받는 Logic Gate Layer
 class LogicLayer(torch.nn.Module):
     """
     The core module for differentiable logic gate networks. Provides a differentiable logic gate layer.
@@ -29,6 +29,7 @@ class LogicLayer(torch.nn.Module):
         :param implementation: implementation to use (options: 'cuda' / 'python'). cuda is around 100x faster than python
         :param connections: method for initializing the connectivity of the logic gate net
         """
+        # weights의 경우 각 뉴런이 16개의 게이트 중 어떤 걸 사용할지 나타내므로 (out_dim, 16) 의 모양이 된다.
         super().__init__()
         self.weights = torch.nn.parameter.Parameter(torch.randn(out_dim, 16, device=device))
         self.in_dim = in_dim
@@ -49,6 +50,7 @@ class LogicLayer(torch.nn.Module):
             self.implementation = 'python'
         assert self.implementation in ['cuda', 'python'], self.implementation
 
+        # 연결은 학습하지 않고 초기화 후 고정된다.
         self.connections = connections
         assert self.connections in ['random', 'unique'], self.connections
         self.indices = self.get_connections(self.connections, device)
@@ -92,6 +94,8 @@ class LogicLayer(torch.nn.Module):
             raise ValueError(self.implementation)
 
     def forward_python(self, x):
+        # assert 조건, 에러 메세지
+        # x의 마지막 차원은 입력 차원과 같아야 한다.
         assert x.shape[-1] == self.in_dim, (x[0].shape[-1], self.in_dim)
 
         if self.indices[0].dtype == torch.int64 or self.indices[1].dtype == torch.int64:
@@ -99,10 +103,18 @@ class LogicLayer(torch.nn.Module):
             self.indices = self.indices[0].long(), self.indices[1].long()
             print(self.indices[0].dtype, self.indices[1].dtype)
 
+        # x[..., self.indices[0]] 에서 앞의 차원은 그대로 유지하고 마지막 차원에서만 인덱싱을 수행한다.
+        # 예를 들어 x[..., indices] 가 x가 2차원이면 x[:, indices]와 같고 3차원이면 x[:,:, indices]와 같다.
+        # self.indices[0] 는 크기가 out_dim 이고 각 원소는 0~in_dim-1 사이의 값이므로 이 각 값들을 뽑아 낸다고 생각하면 된다.
+        # 그래서 a, b는 각각 output 뉴런에 들어갈 input 뉴런의 값들이 순서대로 저장되어 있다.
         a, b = x[..., self.indices[0]], x[..., self.indices[1]]
         if self.training:
             x = bin_op_s(a, b, torch.nn.functional.softmax(self.weights, dim=-1))
         else:
+            # self.weights.argmax(-1)는 마지막 차원에서 가장 큰 값이 있는 인덱스 번호를 찾는다.
+            # self.weights의 크기가 (out_dim, 16)이면 각 행에서 가장 큰 값의 위치를 뽑아낸다.
+            # 결과적으로 (out_dim,) 인 정수형 Long 텐서가 만들어진다.
+            # torch.nn.functional.one_hot(..., 16) 은 위에서 구한 인덱스들을 길이가 16인 원-핫 벡터로 만든다. 
             weights = torch.nn.functional.one_hot(self.weights.argmax(-1), 16).to(torch.float32)
             x = bin_op_s(a, b, weights)
         return x
@@ -151,18 +163,21 @@ class LogicLayer(torch.nn.Module):
     def extra_repr(self):
         return '{}, {}, {}'.format(self.in_dim, self.out_dim, 'train' if self.training else 'eval')
 
+    # 뉴런 끼리의 connections를 만든다.
     def get_connections(self, connections, device='cuda'):
         assert self.out_dim * 2 >= self.in_dim, 'The number of neurons ({}) must not be smaller than half of the ' \
                                                 'number of inputs ({}) because otherwise not all inputs could be ' \
                                                 'used or considered.'.format(self.out_dim, self.in_dim)
         if connections == 'random':
-            c = torch.randperm(2 * self.out_dim) % self.in_dim
-            c = torch.randperm(self.in_dim)[c]
-            c = c.reshape(2, self.out_dim)
+            # torch.randperm(n) := 0부터 n-1 까지의 숫자를 중복없이 무작위 순서로 배열한 1차원 텐서를 만든다.
+            # % self.in_dim 연산을 하면 troch.randperm()으로 만들어진 각각의 원소들에 % self.in_dim 연산을 한다.
+            c = torch.randperm(2 * self.out_dim) % self.in_dim  # 길이가 2 * out_dim 이고 모든 원소가 [0, in_dim-1] 범위의 1차원 텐서 생성
+            c = torch.randperm(self.in_dim)[c]  # c를 다시 한 번 섞는다.
+            c = c.reshape(2, self.out_dim)  # 크기가 1 x 2*out_dim 이었던 텐서를 2 x out_dim 크기의 2차원 텐서로 바꾼다.
             a, b = c[0], c[1]
             a, b = a.to(torch.int64), b.to(torch.int64)
             a, b = a.to(device), b.to(device)
-            return a, b
+            return a, b    # a, b 각각은 크기가 out_dim 이고 원소의 크기는 [0, in_dim-1] 인 1차원 텐서이다.
         elif connections == 'unique':
             return get_unique_connections(self.in_dim, self.out_dim, device)
         else:

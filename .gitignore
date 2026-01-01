@@ -3,3 +3,4 @@ data-mnist/
 build/
 difflogic.egg-info/
 lib/
+data-cifar/
