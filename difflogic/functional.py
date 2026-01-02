@@ -84,6 +84,7 @@ def get_unique_connections(in_dim, out_dim, device='cuda'):
         out_dim, in_dim
     )
 
+    # 0부터 in_dim - 1까지의 번호표를 만든다. (예: [0,1,2,3,4,5])
     x = torch.arange(in_dim).long().unsqueeze(0)
 
     # Take pairs (0, 1), (2, 3), (4, 5), ...

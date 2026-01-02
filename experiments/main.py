@@ -125,13 +125,14 @@ def get_model(args):
 
     logic_layers = []
 
-    arch = args.architecture
+    arch = args.architecture    # architecture는 randomly_connected 하나만 존재한다.
     k = args.num_neurons
     l = args.num_layers
 
     ####################################################################################################################
 
     if arch == 'randomly_connected':
+        # torch.nn.Flatten() 은 0번 차원(배치 차원)은 건드리지 않고, 1번 차원부터 마지막 차원까지를 하나로 합친다.
         logic_layers.append(torch.nn.Flatten())
         logic_layers.append(LogicLayer(in_dim=in_dim, out_dim=k, **llkw))
         for _ in range(l - 1):
@@ -211,6 +212,8 @@ def packbits_eval(model, loader):
     return res.item()
 
 
+# 전반적인 구조/동작 흐름
+# (1) 데이터셋 로딩 --> (2) LGN 모델 구성 --> (3) Adam으로 반복 학습 --> (4) 주기적으로 정확도 평가 --> (5) 옵션으로 PackBits 추론/CPU C 컴파일 추론
 if __name__ == '__main__':
 
     ####################################################################################################################
@@ -272,13 +275,17 @@ if __name__ == '__main__':
     random.seed(args.seed)
     np.random.seed(args.seed)
 
+    # (1) 데이터 셋 로딩
     train_loader, validation_loader, test_loader = load_dataset(args)
+    # (2) 모델 구성
     model, loss_fn, optim = get_model(args)
 
     ####################################################################################################################
 
     best_acc = 0
 
+    # tqdm은 학습 진행 상황을 보여주는 진행 바를 생성한다.
+    # x, y는 각각 입력 데이터와 정답 데이터를 나타낸다.
     for i, (x, y) in tqdm(
             enumerate(load_n(train_loader, args.num_iterations)),
             desc='iteration',
@@ -287,8 +294,10 @@ if __name__ == '__main__':
         x = x.to(BITS_TO_TORCH_FLOATING_POINT_TYPE[args.training_bit_count]).to('cuda')
         y = y.to('cuda')
 
+        # (3) Adam으로 반복 학습
         loss = train(model, x, y, loss_fn, optim)
 
+        # (4) 주기적으로 정확도 평가
         if (i+1) % args.eval_freq == 0:
             if args.extensive_eval:
                 train_accuracy_train_mode = eval(model, train_loader, mode=True)
@@ -333,6 +342,7 @@ if __name__ == '__main__':
 
     ####################################################################################################################
 
+    # (5) 옵션으로 PackBits 추론/CPU C 컴파일 추론
     if args.compile_model:
         print('\n' + '='*80)
         print(' Converting the model to C code and compiling it...')
