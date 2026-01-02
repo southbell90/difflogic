@@ -186,7 +186,7 @@ class LogicLayer(torch.nn.Module):
 
 ########################################################################################################################
 
-
+# 마지막 LogicLayer가 만든 많은 출력 뉴런들을 클래스 수 k로 묶어서 합산해 점수를 만드는 집계 레이어
 class GroupSum(torch.nn.Module):
     """
     The GroupSum module.
@@ -204,10 +204,15 @@ class GroupSum(torch.nn.Module):
         self.device = device
 
     def forward(self, x):
-        if isinstance(x, PackBitsTensor):
+        if isinstance(x, PackBitsTensor):   # 초고속 추론인 경우
             return x.group_sum(self.k)
 
+        # 학습 / 일반 추론 경로
         assert x.shape[-1] % self.k == 0, (x.shape, self.k)
+        # x.shape[:-1]은 처음부터 마지막 차원 전까지를 의미한다 --> x의 shape이 (32,10,108) 이면 x.shape[:-1]는 (32, 10) 이 된다.
+        # x의 마지막 차원이 (B, n) 이면 (B, k , group_size)로 바꾼다. k는 클래스의 크기.
+        # .sum(-1)을 해서 그룹별 합을 한다. --> (B, k) 로 바뀜
+        # tau 로 스케일 조정
         return x.reshape(*x.shape[:-1], self.k, x.shape[-1] // self.k).sum(-1) / self.tau
 
     def extra_repr(self):
