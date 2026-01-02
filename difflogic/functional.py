@@ -84,9 +84,11 @@ def get_unique_connections(in_dim, out_dim, device='cuda'):
         out_dim, in_dim
     )
 
-    # 0부터 in_dim - 1까지의 번호표를 만든다. (예: [0,1,2,3,4,5])
+    # torch.arange(in_dim)은 0부터 in_dim - 1까지의 번호표를 만든다. (예: [0,1,2,3,4,5])
+    # unsqueeze(0)은 0번째 위치에 차원을 하나 더 추가한다. --> [[0,1,2,3,4,5]] 같은 형태가 된다. 
     x = torch.arange(in_dim).long().unsqueeze(0)
 
+    # [..., ::2] --> ... 은 앞의 차원은 그대로 두라는 의미이다. 즉, 마지막 차원에서 0번부터 시작해서 2칸 간격으로 가져온다.
     # Take pairs (0, 1), (2, 3), (4, 5), ...
     a, b = x[..., ::2], x[..., 1::2]
     if a.shape[-1] != b.shape[-1]:
@@ -95,6 +97,7 @@ def get_unique_connections(in_dim, out_dim, device='cuda'):
         b = b[..., :m]
 
     # If this was not enough, take pairs (1, 2), (3, 4), (5, 6), ...
+    # 만약 출력 뉴런이 더 많으면 한 칸씩 밀어서 짝을 짓는다.
     if a.shape[-1] < out_dim:
         a_, b_ = x[..., 1::2], x[..., 2::2]
         a = torch.cat([a, a_], dim=-1)
