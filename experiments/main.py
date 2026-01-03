@@ -200,9 +200,10 @@ def eval(model, loader, mode):
 def packbits_eval(model, loader):
     orig_mode = model.training
     with torch.no_grad():
-        model.eval()
+        model.eval()    # 모델을 eval 모드로 전환
         res = np.mean(
             [
+                # model(PackBitsTensor(...)) 을 호출하면 torch.nn.Sequential 안에 있는 모듈들을 순서대로 실행한다.
                 (model(PackBitsTensor(x.to('cuda').reshape(x.shape[0], -1).round().bool())).argmax(-1) == y.to(
                     'cuda')).to(torch.float32).mean().item()
                 for x, y in loader
@@ -320,6 +321,7 @@ if __name__ == '__main__':
                 'test_acc_train_mode': test_accuracy_train_mode,
             }
 
+            # PackBitsTensor 기반 초고속 추론
             if args.packbits_eval:
                 r['train_acc_eval'] = packbits_eval(model, train_loader)
                 r['valid_acc_eval'] = packbits_eval(model, train_loader)

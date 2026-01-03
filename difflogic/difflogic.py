@@ -143,6 +143,7 @@ class LogicLayer(torch.nn.Module):
                     x, a, b, w, self.given_x_indices_of_y_start, self.given_x_indices_of_y
                 ).transpose(0, 1)
 
+    # PackBitsTensor를 사용한 초고속 추론
     def forward_cuda_eval(self, x: PackBitsTensor):
         """
         WARNING: this is an in-place operation.
@@ -152,6 +153,7 @@ class LogicLayer(torch.nn.Module):
         """
         assert not self.training
         assert isinstance(x, PackBitsTensor)
+        # x.t 는 입력 데이터에 transpose를 취한 데이터이다.
         assert x.t.shape[0] == self.in_dim, (x.t.shape, self.in_dim)
 
         a, b = self.indices

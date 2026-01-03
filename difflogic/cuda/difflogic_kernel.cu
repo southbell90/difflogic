@@ -27,12 +27,13 @@ inline void gpuAssert(const cudaError_t code, const char *const file, const int 
     }
 }
 
+// 블록 계산용 올림 나눗셈
 template <typename T> T ceil_div(const T x, const T y) { return x / y + !!(x % y); }
 
 
 /**********************************************************************************************************************/
 
-
+// AtomicFPOp, gpuAtomicAdd는 실제로 사용되지는 않음
 template <typename T> struct AtomicFPOp;
 
 template <> struct AtomicFPOp<at::Half> {
@@ -86,7 +87,13 @@ static inline __device__ double gpuAtomicAdd(double *address, double val) { retu
 /**  TRAINING MODE  ***************************************************************************************************/
 /**********************************************************************************************************************/
 
-
+/*
+    x : [in_size, batch] 이전 레이어의 출력 데이터, 파이썬에서 transpose 해서 넘긴다
+    a : [out_size] 각 출력 뉴런이 참조할 첫 번째 입력 인덱스
+    b : [out_size] 각 출력 뉴런이 참조할 두 번째 입력 인덱스
+    w : [out_size, 16] 각 뉴런별 16개 연산의 확률/가중치
+    y : [out_size, batch] 출력
+*/
 template <typename scalar_t>
 __global__ void logic_layer_cuda_forward_kernel(
     torch::PackedTensorAccessor64<scalar_t, 2, torch::RestrictPtrTraits> x,
@@ -106,14 +113,18 @@ __global__ void logic_layer_cuda_forward_kernel(
             col < y.size(0);
             col += blockDim.y * gridDim.y
         ) {
-
+            // 현재 레이어의 뉴런에 입력될 이전 데이터의 인덱스 idx_a, idx_b를 구한다.
             const auto idx_a = a[col];
             const auto idx_b = b[col];
+
+            // 현재 레이어의 뉴런에 입력될 데이터 a_, b_ 를 구한다.
             const auto a_ = x[idx_a][row];
             const auto b_ = x[idx_b][row];
 
+            // 가중치를 구한다.
             const auto w_ = w[col];
 
+            // 출력 값을 구한다. sigma_{i=0 to 15} (w_i * f_i(a, b)) 을 계산 하는 것이다.
             y[col][row] = (
                  ((w_[1] * (a_ * b_)
                  + w_[2] * (a_ - a_ * b_))
@@ -471,6 +482,13 @@ template <typename T> __device__ __forceinline__ T bin_op_eval(const T a_, const
     }
 }
 
+/*
+    x : [in_size, batch] 이전 레이어의 출력 데이터, 파이썬에서 transpose 해서 넘긴다
+    a : [out_size] 각 출력 뉴런이 참조할 첫 번째 입력 인덱스
+    b : [out_size] 각 출력 뉴런이 참조할 두 번째 입력 인덱스
+    w : [out_size] 각 뉴런에서 16개 논리 연산 중 어떤 것을 연산할지를 나타낸다.
+    y : [out_size, batch] 출력
+*/
 template <typename scalar_t>
 __global__ void logic_layer_cuda_eval_kernel(
     torch::PackedTensorAccessor64<scalar_t, 2, torch::RestrictPtrTraits> x,
@@ -500,6 +518,7 @@ __global__ void logic_layer_cuda_eval_kernel(
     }
 }
 
+// PackBitsTensor를 사용해서 초고속 추론을 할 때 사용되는 함수
 torch::Tensor logic_layer_cuda_eval(
     torch::Tensor x,
     torch::Tensor a,

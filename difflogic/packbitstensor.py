@@ -4,6 +4,7 @@ import numpy as np
 
 
 class PackBitsTensor:
+    # t 는 [B, in_dim]
     def __init__(self, t: torch.BoolTensor, bit_count=32, device='cuda'):
 
         assert len(t.shape) == 2, t.shape
@@ -12,7 +13,12 @@ class PackBitsTensor:
         self.device = device
 
         if device == 'cuda':
-            t = t.to(device).T.contiguous()
+            t = t.to(device).T.contiguous()     # transpose 해서 [in_dim, B]
+            # difflogic_cuda.tensor_packbits_cuda(...) 함수는 C++ 바인딩에서 노출된 함수
+            # difflogic_kernel.cu 의 tensor_packbits_cuda_kernel(...) 커널 실행
+            # self.t 는 dtype이 bitcount에 따라 int32 / int 64 등이 됨
+            # shape : [in_dim, ceil(B / bit_count)] --> batch에 있는 데이터들을 int32, int64로 묶음
+            # self.pad_len은 패딩된 비트 수 이다.
             self.t, self.pad_len = difflogic_cuda.tensor_packbits_cuda(t, self.bit_count)
         else:
             raise NotImplementedError(device)
@@ -21,6 +27,7 @@ class PackBitsTensor:
         assert self.device == 'cuda', self.device
         return difflogic_cuda.groupbitsum(self.t, self.pad_len, k)
 
+    # flatten()을 override 해서 그냥 자기 자신을 반환한다.
     def flatten(self, start_dim=0, end_dim=-1, **kwargs):
         """
         Returns the PackBitsTensor object itself.

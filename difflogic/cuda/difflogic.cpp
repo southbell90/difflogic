@@ -5,6 +5,7 @@
 
 namespace py = pybind11;
 
+// 실제 구현은 .cu 파일에 있고 여기서는 함수 시그니처만 forward-declare 해둔다.
 torch::Tensor logic_layer_cuda_forward(
     torch::Tensor x,
     torch::Tensor a,
@@ -42,6 +43,8 @@ torch::Tensor groupbitsum(
     const int k
 );
 
+// TORCH_EXTENSION_NAME은 setup.py에서 빌드될 때 확장 모듈 이름으로 치환
+// m.def는 파이썬에서 difflogic_cuda,froward(...) 같은 이름으로 호출 가능하게 만든다.
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def(
         "forward",
