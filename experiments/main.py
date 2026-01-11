@@ -5,15 +5,19 @@ import os
 
 import numpy as np
 import torch
+import torch.nn as nn
 import torchvision
 from tqdm import tqdm
 
-from results_json import ResultsJSON
+from .results_json import ResultsJSON
 
-import mnist_dataset
-import uci_datasets
+from . import mnist_dataset, uci_datasets
 
 from difflogic import LogicLayer, GroupSum, PackBitsTensor, CompiledLogicNet
+
+from dataclasses import replace, dataclass
+from typing import Optional, Tuple, Dict, List
+import time
 
 torch.set_num_threads(1)
 
@@ -134,9 +138,9 @@ def get_model(args):
     if arch == 'randomly_connected':
         # torch.nn.Flatten() 은 0번 차원(배치 차원)은 건드리지 않고, 1번 차원부터 마지막 차원까지를 하나로 합친다.
         logic_layers.append(torch.nn.Flatten())
-        logic_layers.append(LogicLayer(in_dim=in_dim, out_dim=k, **llkw))
-        for _ in range(l - 1):
-            logic_layers.append(LogicLayer(in_dim=k, out_dim=k, **llkw))
+        logic_layers.append(LogicLayer(in_dim=in_dim, out_dim=k, **llkw, id = 0))
+        for i in range(l - 1):
+            logic_layers.append(LogicLayer(in_dim=k, out_dim=k, **llkw, id=i+1))
 
         model = torch.nn.Sequential(
             *logic_layers,
@@ -211,6 +215,84 @@ def packbits_eval(model, loader):
         )
         model.train(mode=orig_mode)
     return res.item()
+
+# -----------------------------
+# Benchmark (speed)
+# -----------------------------
+@torch.no_grad()
+def benchmark_inference(
+    model: nn.Module,
+    device: torch.device,
+    batch_size: int = 1024,
+    iters: int = 50,
+    warmup: int = 10,
+    input_size: Tuple[int, int, int] = (9, 32, 32),
+) -> Tuple[float, float]:
+    """
+    반환:
+      - avg_latency_ms (한 iteration에서 batch 1회 forward)
+      - throughput (images/sec)
+    """
+    model.eval()
+    x = torch.randn(batch_size, *input_size, device=device)
+    x = x.to('cuda').reshape(x.shape[0], -1).round().bool()
+
+    # warmup
+    for _ in range(warmup):
+        model(PackBitsTensor(x))
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+
+    
+    times = []
+    for _ in range(iters):
+        if device.type == "cuda":
+            starter = torch.cuda.Event(enable_timing=True)
+            ender = torch.cuda.Event(enable_timing=True)
+            starter.record()
+            model(PackBitsTensor(x))
+            ender.record()
+            torch.cuda.synchronize()
+            times.append(starter.elapsed_time(ender))  # ms
+        else:
+            t0 = time.perf_counter()
+            model(x)
+            t1 = time.perf_counter()
+            times.append((t1 - t0) * 1000.0)
+
+    avg_ms = sum(times) / len(times)
+    thr = batch_size * 1000 / avg_ms
+    return avg_ms, thr
+
+def bytes_to_mib(nbytes: int) -> float:
+    return nbytes / (1024 ** 2)
+
+
+def count_params(model: nn.Module) -> int:
+    return sum(p.numel() for p in model.parameters())
+
+def count_buffers(model: nn.Module) -> int:
+    sd_keys = model.state_dict().keys()
+    return sum(b.numel() for name, b in model.named_buffers() if name in sd_keys)
+
+
+def param_bytes(model: nn.Module) -> int:
+    # 실제 dtype(half/float) 기준 파라미터 메모리
+    return sum(p.numel() * p.element_size() for p in model.parameters())
+
+def buffer_bytes(model: nn.Module) -> int:
+    sd_keys = model.state_dict().keys()
+    return sum(b.numel() * b.element_size() for name, b in model.named_buffers() if name in sd_keys)
+
+# -----------------------------
+# Config
+# -----------------------------
+@dataclass
+class CFG:
+    # ---------- Benchmark ----------
+    bench_batch: int = 1024
+    bench_iters: int = 50
+    bench_warmup: int = 10
 
 
 # 전반적인 구조/동작 흐름
@@ -389,4 +471,24 @@ if __name__ == '__main__':
 
                 acc3 = correct / total
                 print('COMPILED MODEL', num_bits, acc3)
+
+    cfg = CFG()
+    device = torch.device('cuda')
+
+    for layer in model:
+        if isinstance(layer, LogicLayer):
+            layer.removeParam()
+
+    print("\n[LGN] Params:", f"{count_params(model):,}")
+    print("[LGN] Buffers:", f"{count_buffers(model):,}")
+    print("[LGN] Param bytes:", f"{bytes_to_mib(param_bytes(model)):.2f} MiB")
+    print("[LGN] Buffer bytes:", f"{bytes_to_mib(buffer_bytes(model)):.2f} MiB")
+    clgn_ms, clgn_thr = benchmark_inference(
+        model, device,
+        batch_size=cfg.bench_batch,
+        iters=cfg.bench_iters,
+        warmup=cfg.bench_warmup,
+        input_size=(3*31,32,32)
+    )
+    print(f"[LGN] Inference: {clgn_ms:.3f} ms / batch({cfg.bench_batch}), {clgn_thr:.1f} img/s")
 

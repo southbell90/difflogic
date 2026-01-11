@@ -20,6 +20,7 @@ class LogicLayer(torch.nn.Module):
             grad_factor: float = 1.,
             implementation: str = None,
             connections: str = 'random',
+            id: int = 0
     ):
         """
         :param in_dim:      input dimensionality of the layer
@@ -36,6 +37,7 @@ class LogicLayer(torch.nn.Module):
         self.out_dim = out_dim
         self.device = device
         self.grad_factor = grad_factor
+        self.id = id
 
         """
         The CUDA implementation is the fast implementation. As the name implies, the cuda implementation is only 
@@ -72,6 +74,11 @@ class LogicLayer(torch.nn.Module):
 
         self.num_neurons = out_dim
         self.num_weights = out_dim
+
+    def removeParam(self):
+        self.w = self.weights.argmax(-1).to(torch.uint8)
+        self.register_buffer(f"w{self.id}", self.w)
+        self.weights = None
 
     def forward(self, x):
         if isinstance(x, PackBitsTensor):
@@ -157,8 +164,8 @@ class LogicLayer(torch.nn.Module):
         assert x.t.shape[0] == self.in_dim, (x.t.shape, self.in_dim)
 
         a, b = self.indices
-        w = self.weights.argmax(-1).to(torch.uint8)
-        x.t = difflogic_cuda.eval(x.t, a, b, w)
+        # w = self.weights.argmax(-1).to(torch.uint8)
+        x.t = difflogic_cuda.eval(x.t, a, b, self.w)
 
         return x
 
