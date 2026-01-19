@@ -64,11 +64,20 @@ class LogicLayer(torch.nn.Module):
             given_x_indices_of_y = [[] for _ in range(in_dim)]
             indices_0_np = self.indices[0].cpu().numpy()
             indices_1_np = self.indices[1].cpu().numpy()
+            # given_x_indices_of_y 에는 in_dim 개 만큼의 리스트가 존재하고 각 리스트에는 in_dim 뉴런의 출력을 입력으로 받는 out_dim 뉴런의 인덱스가 들어간다.
+            # 즉, 이전 뉴런의 입장에서는 자신의 출력을 사용하는 다음 레아어의 뉴런 인덱스들이 저장되어있다.
             for y in range(out_dim):
                 given_x_indices_of_y[indices_0_np[y]].append(y)
                 given_x_indices_of_y[indices_1_np[y]].append(y)
+            # 2차원 리스트를 1차원으로 펼쳤을 때, 시작지점을 알려주는 텐서이다.
+            # np.array([0] ... ) 으로 가장 첫 번째 원소는 0이 되게 한다.
+            # 그 이후 각 리스트의 크기 만큼을 리스트의 원소로 만들고
+            # cumsum() 을 하면 누적합을 한다.
+            # np.array() = [0,2,1,0,4] 였으면 --> [0,2,3,3,7] 이 된다.
+            # y = k : 구간 [start[k], start[k+1]) 마지막 start[k+1] 은 포함 안 된다.
             self.given_x_indices_of_y_start = torch.tensor(
                 np.array([0] + [len(g) for g in given_x_indices_of_y]).cumsum(), device=device, dtype=torch.int64)
+            # self.given_x_indices_of_y는 given_x_indices_of_y에 있는 값들을 펼쳐서 전부 저장한다.(2차원 리스트 --> 1차원 리스트로 변환)
             self.given_x_indices_of_y = torch.tensor(
                 [item for sublist in given_x_indices_of_y for item in sublist], dtype=torch.int64, device=device)
 

@@ -146,6 +146,7 @@ __global__ void logic_layer_cuda_forward_kernel(
 }
 
 
+// L에 대한 w의 편미분을 구한다.
 template <typename scalar_t>
 __global__ void
 logic_layer_cuda_backward_w_kernel(
@@ -155,7 +156,7 @@ logic_layer_cuda_backward_w_kernel(
     torch::PackedTensorAccessor64<scalar_t, 2, torch::RestrictPtrTraits> grad_y,
     torch::PackedTensorAccessor64<scalar_t, 3, torch::RestrictPtrTraits> grad_w_
 ) {
-
+    // x축 방향으로의 threadBlock은 1개 밖에 안 만들어진다.
     const auto row_ = blockIdx.x * blockDim.x + threadIdx.x;
 
     for (  // neuron dim
@@ -165,10 +166,14 @@ logic_layer_cuda_backward_w_kernel(
     ) {
         const auto idx_a = a[col];
         const auto idx_b = b[col];
-        scalar_t grad_w_local_1 = 0;
-        scalar_t grad_w_local_3 = 0;
-        scalar_t grad_w_local_5 = 0;
-        scalar_t grad_w_local_15 = 0;
+
+        // AB, A, B , 1로 16개의 논리합을 전부 복구할 수 있기 때문에 이 4개만 구한다.
+        scalar_t grad_w_local_1 = 0;    // AB
+        scalar_t grad_w_local_3 = 0;    // A
+        scalar_t grad_w_local_5 = 0;    // B
+        scalar_t grad_w_local_15 = 0;   // 1
+
+        // 배치 방향으로 grad_y * f_i(A, B) 를 누적합 한다.
         for (int row = row_; row < grad_y.size(1); row += BACKWARD_W_BATCH_THREADS) {  // batch dim
             const auto a_ = x[idx_a][row];
             const auto b_ = x[idx_b][row];
@@ -324,10 +329,13 @@ torch::Tensor logic_layer_cuda_backward_w(
     const auto in_size = x.size(0);
     const auto out_size = grad_y.size(0);
 
+    // 3차원 초기화 되지 않은 텐서를 하나 만든다. 이때 dtype, device는 x와 같다.
+    // grad_w_4의 shape은 (out_size, BACKWARD_W_BATCH_THREADS, 4)의 형태이다.
     auto grad_w_4 = torch::empty({out_size, BACKWARD_W_BATCH_THREADS, 4}, torch::dtype(x.dtype()).device(x.device()));
 
     dim3 threads_per_block(BACKWARD_W_BATCH_THREADS, 1024 / BACKWARD_W_BATCH_THREADS);
 
+    // grid에서 x축으로의 threadBlock은 1개밖에 안 만든다.
     const dim3 blocks_per_grid(
         1,
         min(static_cast<int64_t>(65535), ceil_div(out_size, static_cast<int64_t>(threads_per_block.y)))
@@ -345,12 +353,20 @@ torch::Tensor logic_layer_cuda_backward_w(
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());
 
+    // grad_w_4 는 (out_size, BACKWARD_W_BATCH_THREADS, 4) 의 shape이다.
+    // grad_w_4.sum(1)은 배치 방향으로 모든 gradient 값들을 더하는 것이다.
+    // grad_w_components 의 shape은 (out_size, 4) 가 된다.
     const auto grad_w_components = grad_w_4.sum(1);
+    // torch::indexing::Slice() 는 파이썬의 : 와 같은 의미이다. --> 해당 차원 전체를 선택
+    // grad_w_4에서 각 ab, a, b, 1에 해당 하는 것들을 인덱싱한다.
+    // 인덱싱하고 나서 shape은 (out_size) 가 된다.
     const auto grad_w_ab = grad_w_components.index({torch::indexing::Slice(), 0});
     const auto grad_w_a = grad_w_components.index({torch::indexing::Slice(), 1});
     const auto grad_w_b = grad_w_components.index({torch::indexing::Slice(), 2});
     const auto grad_w_ = grad_w_components.index({torch::indexing::Slice(), 3});
 
+    // dim = 1 로 stack을 한다.
+    // grad_w의 shape은 (out_dim, 16) 이 된다.
     const auto grad_w = torch::stack({
         torch::zeros({out_size}, torch::dtype(x.dtype()).device(x.device())),
         grad_w_ab,
@@ -396,6 +412,7 @@ torch::Tensor logic_layer_cuda_backward_x(
 
     dim3 threads_per_block(32, 32);
 
+    // x의 shape은 (in_dim, B) 이다.
     const dim3 blocks_per_grid(
         min(static_cast<int64_t>(65535), ceil_div(x.size(1), static_cast<int64_t>(threads_per_block.x))),
         min(static_cast<int64_t>(65535), ceil_div(x.size(0), static_cast<int64_t>(threads_per_block.y)))
