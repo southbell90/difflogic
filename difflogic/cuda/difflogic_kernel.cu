@@ -212,7 +212,7 @@ logic_layer_cuda_backward_x_kernel(
         row < grad_x.size(1);
         row += blockDim.x * gridDim.x
     ) {
-        for (  // neuron dim
+        for (  // neuron dim (in_dim neuron)
             auto col = blockIdx.y * blockDim.y + threadIdx.y;
             col < grad_x.size(0);
             col += blockDim.y * gridDim.y

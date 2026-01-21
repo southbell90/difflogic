@@ -65,7 +65,7 @@ class LogicLayer(torch.nn.Module):
             indices_0_np = self.indices[0].cpu().numpy()
             indices_1_np = self.indices[1].cpu().numpy()
             # given_x_indices_of_y 에는 in_dim 개 만큼의 리스트가 존재하고 각 리스트에는 in_dim 뉴런의 출력을 입력으로 받는 out_dim 뉴런의 인덱스가 들어간다.
-            # 즉, 이전 뉴런의 입장에서는 자신의 출력을 사용하는 다음 레아어의 뉴런 인덱스들이 저장되어있다.
+            # 즉, 이전 뉴런의 입장에서는 자신의 출력을 사용하는 다음 레이어의 뉴런 인덱스들이 저장되어있다.
             for y in range(out_dim):
                 given_x_indices_of_y[indices_0_np[y]].append(y)
                 given_x_indices_of_y[indices_1_np[y]].append(y)
